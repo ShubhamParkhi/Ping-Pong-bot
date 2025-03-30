@@ -116,6 +116,8 @@ async function processEvent(event) {
     return;
   }
   
+  processedTxHashes.add(txHash);
+  
   const bytes32TxHash = ethers.hexlify(ethers.zeroPadValue(txHash, 32));
   
   console.log(`Sending Pong response with hash: ${bytes32TxHash}`);
@@ -128,12 +130,12 @@ async function processEvent(event) {
     console.log(`Pong transaction sent: ${tx.hash}`);
     
     const receipt = await tx.wait();
-    processedTxHashes.add(txHash);
     console.log(`Pong confirmed in block ${receipt.blockNumber}`);
+    saveState(event.blockNumber);
   } catch (error) {
+    processedTxHashes.delete(txHash);
     console.error(`Event processing failed at block ${event.blockNumber}: ${error.message}`);
-    console.error(`Block scan failed: ${error.message}`);
-    throw error; 
+    throw error;
   }
 }
 
