@@ -1,14 +1,24 @@
-const { ethers } = require('ethers');
-const fs = require('fs');
-require('dotenv').config();
+import { ethers } from 'ethers';
+import * as fs from 'fs';
+import 'dotenv/config';
 
-const CONTRACT = process.env.CONTRACT;
-const PROVIDER = process.env.PROVIDER;
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
+interface State {
+  lastProcessedBlock: number;
+  processedTxHashes: string[];
+}
+
+interface ContractEvent extends ethers.Log {
+  transactionHash: string;
+  blockNumber: number;
+}
+
+const CONTRACT = process.env.CONTRACT as string;
+const PROVIDER = process.env.PROVIDER as string;
+const PRIVATE_KEY = process.env.PRIVATE_KEY as string;
 const STATE_FILE = 'state.json';
 const POLLING_INTERVAL = 30000;
 
-const processedTxHashes = new Set();
+const processedTxHashes = new Set<string>();
 
 const CONTRACT_ABI = [
   "event Ping()",
@@ -20,8 +30,8 @@ const provider = new ethers.JsonRpcProvider(PROVIDER);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 const contract = new ethers.Contract(CONTRACT, CONTRACT_ABI, wallet);
 
-function saveState(lastProcessedBlock) {
-  const state = {
+function saveState(lastProcessedBlock: number): void {
+  const state: State = {
     lastProcessedBlock,
     processedTxHashes: Array.from(processedTxHashes)
   };
@@ -29,10 +39,10 @@ function saveState(lastProcessedBlock) {
   console.log(`State updated: Block ${lastProcessedBlock}`);
 }
 
-function loadState() {
+function loadState(): number | null {
   try {
     if (fs.existsSync(STATE_FILE)) {
-      const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      const state: State = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       console.log(`Loading state from block ${state.lastProcessedBlock}`);
       if (state.processedTxHashes) {
         state.processedTxHashes.forEach(hash => processedTxHashes.add(hash));
@@ -40,13 +50,13 @@ function loadState() {
       return state.lastProcessedBlock;
     }
   } catch (error) {
-    console.error(`Failed to load state: ${error.message}`);
+    console.error(`Failed to load state: ${error instanceof Error ? error.message : String(error)}`);
   }
   
   return null;
 }
 
-async function initializePingPongBot() {
+async function initializePingPongBot(): Promise<void> {
   try {
     let fromBlock = loadState();
     if (!fromBlock) {
@@ -64,16 +74,18 @@ async function initializePingPongBot() {
     configureEventListener();
     
     setInterval(async () => {
-      fromBlock = await syncMissedEvents(fromBlock);
+      if (fromBlock !== null) {
+        fromBlock = await syncMissedEvents(fromBlock);
+      }
     }, POLLING_INTERVAL);
     
   } catch (error) {
-    console.error(`Error in initializePingPongBot: ${error.message}`);
+    console.error(`Error in initializePingPongBot: ${error instanceof Error ? error.message : String(error)}`);
     setTimeout(initializePingPongBot, 10000);
   }
 }
 
-async function syncMissedEvents(fromBlock) {
+async function syncMissedEvents(fromBlock: number): Promise<number> {
   try {
     const currentBlock = await provider.getBlockNumber();
     console.log(`Scanning blocks ${fromBlock} to ${currentBlock} for missed events`);
@@ -85,7 +97,7 @@ async function syncMissedEvents(fromBlock) {
       try {
         await processEvent(event);
       } catch (error) {
-        console.error(`Error handling event at block ${event.blockNumber}: ${error.message}`);
+        console.error(`Error handling event at block ${event.blockNumber}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     
@@ -94,22 +106,22 @@ async function syncMissedEvents(fromBlock) {
       saveState(currentBlock);
     }
   } catch (error) {
-    console.error(`Error in syncMissedEvents: ${error.message}`);
+    console.error(`Error in syncMissedEvents: ${error instanceof Error ? error.message : String(error)}`);
   }
   return fromBlock;
 }
 
-function configureEventListener() {
-  contract.on("Ping", async (event) => {
+function configureEventListener(): void {
+  contract.on("Ping", async (event: { log: ContractEvent }) => {
     try {
       await processEvent(event.log);
     } catch (error) {
-      console.error(`Error handling event: ${error.message}`);
+      console.error(`Error handling event: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
 }
 
-async function processEvent(event) {
+async function processEvent(event: ContractEvent): Promise<void> {
   const txHash = event.transactionHash;
   
   if (processedTxHashes.has(txHash)) {
@@ -130,11 +142,11 @@ async function processEvent(event) {
     console.log(`Pong transaction sent: ${tx.hash}`);
     
     const receipt = await tx.wait();
-    console.log(`Pong confirmed in block ${receipt.blockNumber}`);
+    console.log(`Pong confirmed in block ${receipt?.blockNumber}`);
     saveState(event.blockNumber);
   } catch (error) {
     processedTxHashes.delete(txHash);
-    console.error(`Event processing failed at block ${event.blockNumber}: ${error.message}`);
+    console.error(`Event processing failed at block ${event.blockNumber}: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
 }
