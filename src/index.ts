@@ -121,6 +121,15 @@ function configureEventListener(): void {
   });
 }
 
+let currentNonce: number | null = null;
+
+async function getNextNonce(): Promise<number> {
+  if (currentNonce === null) {
+    currentNonce = await wallet.getNonce();
+  }
+  return currentNonce++;
+}
+
 async function processEvent(event: ContractEvent): Promise<void> {
   const txHash = event.transactionHash;
   
@@ -135,11 +144,19 @@ async function processEvent(event: ContractEvent): Promise<void> {
   console.log(`Sending Pong response with hash: ${bytes32TxHash}`);
   
   try {
+    const nonce = await getNextNonce();
+    const feeData = await provider.getFeeData();
+    const maxFeePerGas = feeData.maxFeePerGas ? feeData.maxFeePerGas * BigInt(12) / BigInt(10) : undefined;
+    const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ? feeData.maxPriorityFeePerGas * BigInt(12) / BigInt(10) : undefined;
+
     const tx = await contract.pong(bytes32TxHash, {
-      gasLimit: 100000
+      nonce,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+      type: 2
     });
     
-    console.log(`Pong transaction sent: ${tx.hash}`);
+    console.log(`Pong transaction sent: ${tx.hash} with nonce ${nonce}`);
     
     const receipt = await tx.wait();
     console.log(`Pong confirmed in block ${receipt?.blockNumber}`);
@@ -147,6 +164,7 @@ async function processEvent(event: ContractEvent): Promise<void> {
   } catch (error) {
     processedTxHashes.delete(txHash);
     console.error(`Event processing failed at block ${event.blockNumber}: ${error instanceof Error ? error.message : String(error)}`);
+    currentNonce = null;
     throw error;
   }
 }
